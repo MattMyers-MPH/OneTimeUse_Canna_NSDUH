@@ -1,0 +1,324 @@
+*Title: NSDUH One Time Cannabis Use ; 
+*Description:     SAS code used to identify those who try cannabis once and only once, estimates to be used in future analysis (not published here)
+*Output:          Yearly % and SE estimates - to be used in statstical analysis (R CODE)
+*Numertor:        # trying cannabis ONCE in the past year 
+*Denominator:     # w/ past year cannabis initiation 
+      UPDATED DENOM: THOSE WHO initiated cannabis one year (4qtrs) prior to NSDUH interview date 
+*Input Data:      NSDUH 2010-2019, downloaded PDAS
+*Author:          Matthew Myers 
+*Date:                  3/17/2023;
+*Data: NSDUH Public Use Data Files - can be downloaded here: https://www.datafiles.samhsa.gov/dataset/national-survey-drug-use-and-health-2010-nsduh-2010-ds0001; 
+  *In this code, I start with data loaded into the SAS working directory, titled NSDUH_&year;
+*********************************************************************************************************************************************************************;
+*Format data; 
+proc format; 
+      value irsex 1='Male' 2='Female';
+      value under18_init 0='Over 18' 1='Under 18';
+      value under21_init 0='Over 21' 1='Under 21';
+run;
+
+*Clean and standardize NSDUH data variables across years; 
+%macro yr (year);
+  DATA nsduh_&year; SET nsduh_&year;
+       mj_get_easy=.;
+              if rdifmj= 1 then mj_get_easy=1;
+              if rdifmj= 0 then mj_get_easy=0;
+        prc_mjhrm_mt_md_gr=.;   
+              if RSKMJOCC = 1 | RSKMJOCC = 2 then prc_mjhrm_mt_md_gr=0; 
+              if RSKMJOCC = 3 | RSKMJOCC = 4 then prc_mjhrm_mt_md_gr=1; 
+  run; %mend; 
+  %macro yr2 (year);
+  DATA nsduh_&year; SET nsduh_&year;
+       mj_get_easy=.;
+              if DIFOBTMRJ= "1" then mj_get_easy=1;
+              if DIFOBTMRJ= "0" then mj_get_easy=0;
+        prc_mjhrm_mt_md_gr=.;   
+              if rskmrjmon = 1 | rskmrjmon = 2 then prc_mjhrm_mt_md_gr=0; 
+              if rskmrjmon = 3 | rskmrjmon = 4 then prc_mjhrm_mt_md_gr=1; 
+  run;
+%mend;
+%yr(2010);
+%yr(2011);
+%yr(2012);
+%yr(2013);
+%yr(2014); 
+%yr2(2015);
+%yr2(2016);
+%yr2(2017);
+%yr2(2018);
+%yr2(2019);
+
+*macro to identify numerator and denominator; 
+%macro clean(year, yrmin); 
+  data Nsduh_&year; set Nsduh_&year; 
+        *year of initiation; 
+        yr_init=.; 
+              if mjyfu=&year-2 then yr_init=0;
+              if mjyfu=9989 | mjyfu=9991 | mjyfu=9999 then yr_init=0;
+              if mjyfu= &year-1 then yr_init=1; 
+              if mjyfu= &year  then yr_init=1;
+        *qtr of initiation; 
+        qt_init=.;
+              if mjmfu = 1  | mjmfu = 2  | mjmfu = 3 then  qt_init=1;
+              if mjmfu = 4  | mjmfu = 5  | mjmfu = 6 then  qt_init=2;
+              if mjmfu = 7  | mjmfu = 8  | mjmfu = 9 then  qt_init=3;
+              if mjmfu = 10 | mjmfu = 11 | mjmfu = 12 then qt_init=4;
+        *past year initiate if initiated AT ANY POINT IN the yr prior to nsduh interview qtr;
+        py_init=0; 
+              if yr_init=1 & qt_init ge quarter  then py_init=1; 
+              if mjyfu=&year & qt_init le quarter then py_init=1;
+        *Identifying OUTCOME variable; 
+        num=.; 
+              if py_init=1 then num=0;
+              if py_init=1 & mjyrtot=1 then num=1; 
+              if py_init=0 then num=999; 
+              if mjyrtot gt 365 then num=999; 
+        *Identifying age; 
+        under18_init=999; 
+              if irmjage ge 18 & irmjage lt 120 then under18_init=0; 
+              if irmjage lt 18 then under18_init=1; 
+              if irmjage = . | irmjage = 991 then under18_init=999; 
+        under21_init=999; 
+              if irmjage ge 21 & irmjage lt 120 then under21_init=0; 
+              if irmjage lt 21 then under21_init=1; 
+              if irmjage = . | irmjage = 991 then under21_init=999; 
+  
+        yrqt_assessed=catx('_', quarter, &year);
+        yrqt_initiate=catx('_', qt_init, mjyfu); 
+     *domain;
+        dom=1; 
+         if num=999 then dom=0;              
+  run; 
+  
+  data Nsduh_&year; set Nsduh_&year; 
+      *ID the number of quarters from initation to assessment; 
+        flw_qtr=.; 
+              if dom=1 then flw_qtr=999;
+                    if yrqt_assessed = "1_&year" & yrqt_initiate = "1_&year" then flw_qtr=0; 
+                    if yrqt_assessed = "1_&year" & yrqt_initiate = "4_&yrmin" then flw_qtr=1; 
+                    if yrqt_assessed = "1_&year" & yrqt_initiate = "3_&yrmin" then flw_qtr=2; 
+                    if yrqt_assessed = "1_&year" & yrqt_initiate = "2_&yrmin" then flw_qtr=3; 
+                    if yrqt_assessed = "1_&year" & yrqt_initiate = "1_&yrmin" then flw_qtr=4; 
+  
+                    if yrqt_assessed = "2_&year" & yrqt_initiate = "2_&year" then flw_qtr=0; 
+                    if yrqt_assessed = "2_&year" & yrqt_initiate = "1_&year" then flw_qtr=1; 
+                    if yrqt_assessed = "2_&year" & yrqt_initiate = "4_&yrmin" then flw_qtr=2; 
+                    if yrqt_assessed = "2_&year" & yrqt_initiate = "3_&yrmin" then flw_qtr=3; 
+                    if yrqt_assessed = "2_&year" & yrqt_initiate = "2_&yrmin" then flw_qtr=4; 
+  
+                    if yrqt_assessed = "3_&year" & yrqt_initiate = "3_&year" then flw_qtr=0; 
+                    if yrqt_assessed = "3_&year" & yrqt_initiate = "2_&year" then flw_qtr=1; 
+                    if yrqt_assessed = "3_&year" & yrqt_initiate = "1_&year" then flw_qtr=2; 
+                    if yrqt_assessed = "3_&year" & yrqt_initiate = "4_&yrmin" then flw_qtr=3; 
+                    if yrqt_assessed = "3_&year" & yrqt_initiate = "3_&yrmin" then flw_qtr=4; 
+  
+                    if yrqt_assessed = "4_&year" & yrqt_initiate = "4_&year" then flw_qtr=0; 
+                    if yrqt_assessed = "4_&year" & yrqt_initiate = "3_&year" then flw_qtr=1; 
+                    if yrqt_assessed = "4_&year" & yrqt_initiate = "2_&year" then flw_qtr=2; 
+                    if yrqt_assessed = "4_&year" & yrqt_initiate = "1_&year" then flw_qtr=3; 
+                    if yrqt_assessed = "4_&year" & yrqt_initiate = "4_&yrmin" then flw_qtr=4; 
+  run;  
+  *creating new domain varaibles - we want to standardize our subsample and analyze only those with 4 quarters of follow up data  - dom_4q is the analytic domain (subsample); 
+  data Nsduh_&year; set Nsduh_&year; 
+        dom_2=dom; 
+              if flw_qtr=999 then dom_2=0; 
+        dom_4q=dom_2; 
+              if flw_qtr ne 4 then dom_4q=0; 
+  run; 
+%mend; 
+%clean(2010, 2009); 
+%clean(2011, 2010); 
+%clean(2012, 2011); 
+%clean(2013, 2012); 
+%clean(2014, 2013); 
+%clean(2015, 2014); 
+%clean(2016, 2015); 
+%clean(2017, 2016); 
+%clean(2018, 2017); 
+%clean(2019, 2018); 
+
+%macro pull2(year); 
+  *pulling weighted incidence ratios for total sample; 
+  ODS output domain=tmp_stat_dom_all; 
+  proc surveymeans data= Nsduh_&year plots=none; var num; domain dom_4q; STRATA VESTR; CLUSTER VEREP;  WEIGHT ANALWT_C; format irsex irsex. ; run; 
+  data tmp_stat_dom_all (keep=IRSEX year p se_p ); set tmp_stat_dom_all;
+        if dom_4q=0 then delete; 
+        year=&year;
+        p=round(mean,.00001); 
+        se_p=round(StdErr, .00001); 
+        IRSEX=9;
+  run; 
+  proc append data= tmp_stat_dom_all out=MJ_once_all; run; 
+  
+  ODS output domain=tmp_stat_dom_sex; 
+  proc surveymeans data= Nsduh_&year plots=none; var num; domain dom_4q*irsex; STRATA VESTR; CLUSTER VEREP;  WEIGHT ANALWT_C; format irsex irsex. ; run; 
+  data tmp_stat_dom_gdr (keep=irsex year p se_p); set tmp_stat_dom_gdr;
+        if dom_4q=0 then delete; 
+        year=&year;
+        p=round(mean,.00001); 
+        se_p=round(StdErr, .00001); 
+  run;
+  proc append data= tmp_stat_dom_sex out=MJ_once_all; run; 
+  
+  *For under/over 21 init;
+  ODS output domain=tmp_stat_dom_age; 
+  proc surveymeans data= Nsduh_&year plots=none; var num; domain dom_4q*under21_init; STRATA VESTR; CLUSTER VEREP;  WEIGHT ANALWT_C; format under21_init under21_init. ; run; 
+  data tmp_stat_dom_gdr (keep=under21_init year p se_p); set tmp_stat_dom_gdr;
+        if dom_4q=0 then delete; 
+        year=&year;
+        p=round(mean,.00001); 
+        se_p=round(StdErr, .00001); 
+  run;
+  proc append data= tmp_stat_dom_age out=MJ_once_21; run; 
+  
+  *Availability: mj_get_easy ;
+  ODS output domain=tmp_stat_dom_ease; 
+  proc surveymeans data= Nsduh_&year plots=none; var num; domain dom_4q*mj_get_easy; STRATA VESTR; CLUSTER VEREP;  WEIGHT ANALWT_C; run; 
+  data tmp_stat_dom_gdr (keep=mj_get_easy year p se_p); set tmp_stat_dom_gdr;
+        if dom_4q=0 then delete; 
+        year=&year;
+        p=round(mean,.00001); 
+        se_p=round(StdErr, .00001); 
+  run;
+  proc append data= tmp_stat_dom_ease out=MJ_once_avail; run; 
+%mend; 
+%pull2(2010); 
+%pull2(2011); 
+%pull2(2012); 
+%pull2(2013); 
+%pull2(2014); 
+%pull2(2015); 
+%pull2(2016); 
+%pull2(2017); 
+%pull2(2018); 
+%pull2(2019); 
+
+*tmp_stat_dom_all, tmp_stat_dom_sex, tmp_stat_dom_age, and tmp_stat_dom_ease are datasets containging estimates used in paper analyses
+
+***************************************************************
+*Creating 2010-2019 aggregate dataset to describe total sample;  
+***************************************************************
+%macro clnpull (yr, yr2); 
+  proc sql; create table nsduh_&yr as select yr_init, &yr as year, 
+    under18_init, under21_init, quarter, flw_qtr, dom_2, dom_4q, 
+    mjyfu, prc_mjhrm_mt_md_gr, mj_get_easy, mjmfu, qt_init, py_init, 
+    num, mjyrtot, dom, IRSEX, irmjage, income, newrace2,  COUTYP2 as COUTYP4, 
+    VESTR, VEREP, ANALWT_C 
+  from nsduh_20&yr; quit; 
+%mend; 
+%clnpull(10); 
+%clnpull(11); 
+%clnpull(12); 
+%clnpull(13); 
+%clnpull(14);
+
+%macro clnpull2 (yr); 
+  proc sql; create table nsduh_&yr as select yr_init, &yr as year, 
+    under18_init, under21_init, quarter, flw_qtr, dom_2, dom_4q, 
+    mjyfu, prc_mjhrm_mt_md_gr, mj_get_easy, mjmfu, qt_init, py_init, 
+    num, mjyrtot, dom, IRSEX, irmjage, income, newrace2, COUTYP4, 
+    VESTR, VEREP, ANALWT_C 
+  from nsduh_20&yr; quit; 
+%mend; 
+%clnpull2(15); 
+%clnpull2(16); 
+%clnpull2(17); 
+%clnpull2(18); 
+%clnpull2(19); 
+
+%mend; 
+*appending 2010-2019 data to create aggregate dataset; 
+data nsduh_all; 
+  set nsduh_10 nsduh_11 nsduh_12 nsduh_13 nsduh_14
+      nsduh_15 nsduh_16 nsduh_17 nsduh_18 nsduh_19;
+    
+  ANALWT_C_new= ANALWT_C/10; 
+  male=.;   if irsex=1 then male=1;   if irsex=2 then male=0; 
+  female=.; if irsex=2 then female=1; if irsex=1 then female=0; 
+
+  inc_1=.; if income=1 then inc_1=1; if income=2 | income=3 | income=4 then inc_1=0; 
+  inc_2=.; if income=2 then inc_2=1; if income=1 | income=3 | income=4 then inc_2=0; 
+  inc_3=.; if income=3 then inc_3=1; if income=1 | income=2 | income=4 then inc_3=0; 
+  inc_4=.; if income=4 then inc_4=1; if income=1 | income=2 | income=3 then inc_4=0; 
+  
+  lg_met=.; if COUTYP4= 1 then lg_met=1; if COUTYP4= 2 | COUTYP4= 3 then lg_met=0; 
+  sm_met=.; if COUTYP4= 2 then sm_met=1; if COUTYP4= 1 | COUTYP4= 3 then sm_met=0; 
+  nn_met=.; if COUTYP4= 3 then nn_met=1; if COUTYP4= 1 | COUTYP4= 2 then nn_met=0; 
+  
+  non_h_w=.; if NEWRACE2=1 then non_h_w=1;       if NEWRACE2=2 | NEWRACE2=3 | NEWRACE2=4 | NEWRACE2=5 | NEWRACE2=6 | NEWRACE2=7 then non_h_w=0;
+  non_h_b=.; if NEWRACE2=2 then non_h_b=1;       if NEWRACE2=1 | NEWRACE2=3 | NEWRACE2=4 | NEWRACE2=5 | NEWRACE2=6 | NEWRACE2=7 then non_h_b=0;
+  hisp=.;           if NEWRACE2=7 then hisp=1;   if NEWRACE2=1 | NEWRACE2=3 | NEWRACE2=4 | NEWRACE2=5 | NEWRACE2=6 | NEWRACE2=2 then hisp=0;
+  oth=.;            if NEWRACE2=3 | NEWRACE2=4 | NEWRACE2=5 | NEWRACE2=6 then oth=1;
+                    if NEWRACE2=1 | NEWRACE2=2 | NEWRACE2=7  then oth=0;
+  race_full=.; 
+       if non_h_w=1 then race_full=0;
+       if non_h_b=1 then race_full=1;
+       if hisp=1 then race_full=2;
+       if oth=1 then race_full=3;
+  
+  over18_init=0; if under18_init=0 then over18_init=1; 
+  over21_init=0; if under21_init=0 then over21_init=1;
+  
+  prc_mjhrm_mt_md_gr_inv=.; if prc_mjhrm_mt_md_gr= 1 then prc_mjhrm_mt_md_gr_inv=0; if prc_mjhrm_mt_md_gr= 0 then prc_mjhrm_mt_md_gr_inv=1; 
+  mj_get_easy_inv=.; if mj_get_easy= 1 then mj_get_easy_inv=0; if mj_get_easy= 0 then mj_get_easy_inv=1; 
+  
+        dom_4q=dom_2;
+          if flw_qtr ne 4 then dom_4q=0;  
+run; 
+
+*Pulling descriptive table 1 - among aggregate sample. ;
+*sample n;
+proc surveyfreq data=nsduh_all; table dom_4q*num; STRATA VESTR; CLUSTER VEREP;  WEIGHT ANALWT_C_new; run; 
+
+*table 1 - sample description; 
+%macro t1(var, r);  
+  ods output domain=temp_dom ;
+  proc surveymeans data=nsduh_all plots=none ; var &var  ; domain dom_4q*num; STRATA VESTR; CLUSTER VEREP;  WEIGHT ANALWT_C_new; run;
+  data temp_dom(keep=num total); set temp_dom; if dom_4q ne 1 then delete; mean=round(mean*100, .01); lowerCLMean=round(lowerCLMean*100, .01); upperclmean=round(upperclmean*100, .01);       total=CAT(mean, "% (", lowerCLMean, ", ", upperclmean, ")"); run;
+  proc transpose data=temp_dom out= temp_dom; var total; id num; run; data temp_dom(keep=variable _0 _1); set temp_dom; length variable $20; variable="&var"; run; 
+  
+  ods output domain=temp_total;
+  proc surveymeans data=nsduh_all plots=none ; var &var ; domain dom_4q; STRATA VESTR; CLUSTER VEREP;  WEIGHT ANALWT_C_new; run;
+  data temp_total (keep = variable tot_samp); set temp_total; if dom_4q ne 1 then delete; mean=round(mean*100, .01); lowerCLMean=round(lowerCLMean*100, .01); upperclmean=round(upperclmean*100, .01); tot_samp=CAT(mean, "% (", lowerCLMean, ", ", upperclmean, ")"); length variable $ 20; variable="&var"; run; 
+  
+  data temp_table_1; merge temp_dom temp_total ; by variable; run; 
+  proc append data=temp_table_1 base=table_1; run; 
+%mend; 
+%t1(male); 
+%t1(female); 
+%t1(inc_1); 
+%t1(inc_2); 
+%t1(inc_3);  
+%t1(inc_4); 
+%t1(lg_met); 
+%t1(sm_met);  
+%t1(nn_met);  
+%t1(non_h_w); 
+%t1(non_h_b); 
+%t1(hisp);  
+%t1(oth); 
+%t1(under21_init);
+%t1(over21_init);
+
+%t1(prc_mjhrm_mt_md_gr);
+%t1(prc_mjhrm_mt_md_gr_inv);
+%t1(mj_get_easy);
+%t1(mj_get_easy_inv);
+
+proc surveymeans data=nsduh_all plots=none ; var irmjage  ; domain dom_4q*num; STRATA VESTR; CLUSTER VEREP;  WEIGHT ANALWT_C_new; run;
+proc surveymeans data=nsduh_all plots=none ; var irmjage ; domain dom_4q; STRATA VESTR; CLUSTER VEREP;  WEIGHT ANALWT_C_new; run;
+
+%macro or(var, r); 
+  proc surveylogistic data= nsduh_all; 
+        class &var (ref=r); 
+        model num (desc)= &var; 
+        domain dom_4q; 
+        STRATA VESTR; CLUSTER VEREP;  WEIGHT ANALWT_C_new;
+  run;
+%mend; 
+%or(male, '0'); *0; 
+%or(income, '1'); *change ref to 1 - Less than $20,000; 
+%or(COUTYP4, '1'); *1 - Large Metro; 
+%or(race_full, '0'); *0; 
+%or(under18_init, '0'); *0; 
+%or(under21_init, '0'); *0;
